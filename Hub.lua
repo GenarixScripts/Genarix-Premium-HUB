@@ -1,7 +1,7 @@
 --[[
     ╔══════════════════════════════════════════════════╗
     ║         GENARIX HUB PREMIUM - UNIVERSAL         ║
-    ║         Version: 2.4.0                          ║
+    ║         Version: 2.4.1                          ║
     ║         Powered by Genarix UI Library           ║
     ╚══════════════════════════════════════════════════╝
 ]]
@@ -137,7 +137,7 @@ local function getClosestPlayer()
 end
 
 -- ================================================
--- BULLET DROP COMPENSATION
+-- BULLET DROP COMPENSATION (SUAVE)
 -- ================================================
 local function calculateBulletDrop(targetPart)
     if not bulletDropEnabled or not targetPart then return 0 end
@@ -147,22 +147,16 @@ local function calculateBulletDrop(targetPart)
     local myHRP = myChar:FindFirstChild("HumanoidRootPart")
     if not myHRP then return 0 end
 
-    -- Calcular distância 3D entre jogador e alvo
     local distance = (myHRP.Position - targetPart.Position).Magnitude
 
-    -- Se a distância é menor que o início do drop, sem compensação
     if distance <= bulletDropStartDist then return 0 end
 
-    -- Distância efetiva (acima do threshold)
     local effectiveDist = distance - bulletDropStartDist
 
-    -- Fórmula de drop: quadrática para simular gravidade
-    -- quanto mais longe, mais o drop aumenta (como gravidade real)
-    -- dropPixels = intensity * (distancia_efetiva / 100)^2 * fator_base
-    local dropFactor = (effectiveDist / 100) ^ 1.5
-    local dropPixels = bulletDropIntensity * dropFactor * 30
+    -- Fórmula suave: expoente 1.3 e fator base 15 (~50% menos que antes)
+    local dropFactor = (effectiveDist / 100) ^ 1.3
+    local dropPixels = bulletDropIntensity * dropFactor * 15
 
-    -- Limitar o offset máximo
     dropPixels = math.min(dropPixels, bulletDropMaxOffset)
 
     return dropPixels
@@ -174,30 +168,20 @@ end
 local function aimAtTarget(targetPart)
     if not targetPart then return end
 
-    -- Calcular bullet drop offset (em pixels na tela)
     local dropOffset = calculateBulletDrop(targetPart)
 
     if aimbotMethod == "Camera" then
-        -- Método Camera com bullet drop compensation
-        -- Calcular posição ajustada do alvo (abaixar a mira = mirar ACIMA do alvo)
         local adjustedPos = targetPart.Position + Vector3.new(0, dropOffset * 0.05, 0)
         Camera.CFrame = Camera.CFrame:Lerp(
             CFrame.lookAt(Camera.CFrame.Position, adjustedPos),
             1 / aimbotSmooth
         )
     else
-        -- Método Mouse com bullet drop compensation
         local screenPos, onScreen = Camera:WorldToScreenPoint(targetPart.Position)
         if not onScreen then return end
 
         local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-
-        -- Posição do alvo na tela + offset de drop (positivo = abaixar mira na tela)
-        -- Para compensar bullet drop, miramos ACIMA do alvo = offset NEGATIVO no Y da tela
-        -- Mas o problema original é "mira muito pra cima quando longe"
-        -- Então adicionamos offset POSITIVO para abaixar a mira
         local targetScreen = Vector2.new(screenPos.X, screenPos.Y + dropOffset)
-
         local delta = targetScreen - screenCenter
 
         local moveX = delta.X / aimbotSmooth
@@ -287,6 +271,7 @@ local function createESP(player)
     if not hum or not head then return end
 
     local data = {}
+
     local hl = Instance.new("Highlight")
     hl.FillColor = GenarixUI:GetAccentColor()
     hl.FillTransparency = 0.7
@@ -585,7 +570,7 @@ local Window = GenarixUI:CreateWindow({
 
 GenarixUI:Notify({
     Title = "Genarix Hub",
-    Content = "Premium Hub v2.4.0 carregado!",
+    Content = "Premium Hub v2.4.1 carregado!",
     Duration = 4
 })
 
@@ -747,9 +732,10 @@ local hitboxToggle = HitSection:CreateToggle({
 })
 allToggleAPIs.hitbox = hitboxToggle
 
+-- Max aumentado de 15 para 25
 HitSection:CreateSlider({
     Name = "Hitbox Size",
-    Min = 1, Max = 15, Default = 5, Increment = 1,
+    Min = 1, Max = 25, Default = 5, Increment = 1,
     Callback = function(v) hitboxSize = v end
 })
 
@@ -972,14 +958,14 @@ ThemeSection:CreateDropdown({
     Callback = function(v)
         local cm = {
             Purple = Color3.fromRGB(130, 80, 255),
-            Red = Color3.fromRGB(220, 50, 60),
-            Blue = Color3.fromRGB(50, 120, 255),
-            Green = Color3.fromRGB(50, 200, 100),
+            Red    = Color3.fromRGB(220, 50, 60),
+            Blue   = Color3.fromRGB(50, 120, 255),
+            Green  = Color3.fromRGB(50, 200, 100),
             Orange = Color3.fromRGB(240, 140, 30),
-            Pink = Color3.fromRGB(240, 80, 160),
-            Cyan = Color3.fromRGB(50, 200, 220),
+            Pink   = Color3.fromRGB(240, 80, 160),
+            Cyan   = Color3.fromRGB(50, 200, 220),
             Yellow = Color3.fromRGB(240, 220, 50),
-            White = Color3.fromRGB(220, 220, 230)
+            White  = Color3.fromRGB(220, 220, 230)
         }
         GenarixUI:SetAccentColor(cm[v] or cm["Purple"])
         GenarixUI:Notify({Title = "Theme", Content = "Cor alterada para " .. v .. "!", Duration = 2})
@@ -999,6 +985,7 @@ KeySection:CreateKeybind({
     Name = "Panic Key (Desliga Tudo)",
     Default = Enum.KeyCode.P,
     Callback = function()
+        -- Zerar todas as variáveis
         aimbotEnabled = false
         hitboxEnabled = false
         espEnabled = false
@@ -1012,10 +999,12 @@ KeySection:CreateKeybind({
         bulletDropEnabled = false
         aimbotActive = false
 
-        for name, api in pairs(allToggleAPIs) do
+        -- Desativar TODOS os toggles visualmente
+        for _, api in pairs(allToggleAPIs) do
             pcall(function() api:Set(false) end)
         end
 
+        -- Cleanup de sistemas
         resetHitboxes()
         removeAllESP()
         removeFOVCircle()
@@ -1024,6 +1013,7 @@ KeySection:CreateKeybind({
         toggleFog(false)
         toggleParticles(false)
 
+        -- Resetar stats do personagem
         local c = LocalPlayer.Character
         if c then
             local h = c:FindFirstChildOfClass("Humanoid")
@@ -1042,7 +1032,7 @@ KeySection:CreateKeybind({
 })
 
 local InfoSection = SettingsTab:CreateSection("Info")
-InfoSection:CreateLabel("Genarix Hub Premium v2.4.0")
+InfoSection:CreateLabel("Genarix Hub Premium v2.4.1")
 InfoSection:CreateLabel("Powered by Genarix UI Library")
 InfoSection:CreateLabel("100% Free & Universal")
 
@@ -1076,8 +1066,9 @@ InfoSection:CreateButton({
 })
 
 print("=============================================")
-print("  Genarix Hub Premium v2.4.0")
+print("  Genarix Hub Premium v2.4.1")
 print("  GUI Toggle: RightShift")
 print("  Panic Key: P | Aimbot: Mouse2")
-print("  Aim Method: Mouse + Bullet Drop")
+print("  Bullet Drop: Suave (x1.3 / base 15)")
+print("  Hitbox Max: 25")
 print("=============================================")
