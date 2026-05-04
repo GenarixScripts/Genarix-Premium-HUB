@@ -1,7 +1,7 @@
 --[[
     ╔══════════════════════════════════════════════════╗
     ║         GENARIX HUB PREMIUM - UNIVERSAL         ║
-    ║         Version: 2.3.0                          ║
+    ║         Version: 2.4.0                          ║
     ║         Powered by Genarix UI Library           ║
     ╚══════════════════════════════════════════════════╝
 ]]
@@ -29,7 +29,13 @@ local aimbotShowFOV = true
 local aimbotActive = false
 local aimbotInputType = "MouseButton2"
 local aimbotKeyCode = nil
-local aimbotMethod = "Mouse" -- "Mouse" ou "Camera"
+local aimbotMethod = "Mouse"
+
+-- BULLET DROP
+local bulletDropEnabled = true
+local bulletDropIntensity = 1.0
+local bulletDropStartDist = 50
+local bulletDropMaxOffset = 200
 
 local hitboxEnabled = false
 local hitboxSize = 5
@@ -58,7 +64,6 @@ local fovCircle = nil
 local flyBody = nil
 local flyGyro = nil
 
--- Guardar todas as APIs de toggle para Panic Key
 local allToggleAPIs = {}
 
 -- ================================================
@@ -66,8 +71,6 @@ local allToggleAPIs = {}
 -- ================================================
 UserInputService.InputBegan:Connect(function(input, gp)
     if not aimbotEnabled then return end
-    -- NÃO bloqueia por gp (gameProcessed) para o aimbot funcionar
-    -- mesmo quando o jogo usa a mesma tecla (ex: Mouse2 para mirar)
     local activate = false
     if aimbotInputType == "Keyboard" and aimbotKeyCode then
         if input.KeyCode == aimbotKeyCode then activate = true end
@@ -111,8 +114,8 @@ local function isEnemyESP(p)
 end
 
 local function getClosestPlayer()
-    local closest, shortest = nil, aimbotFOV
-    if not LocalPlayer.Character then return nil end
+    local closest, closestPart, shortest = nil, nil, aimbotFOV
+    if not LocalPlayer.Character then return nil, nil end
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character and isEnemy(p) then
             local hum = p.Character:FindFirstChildOfClass("Humanoid")
@@ -121,46 +124,91 @@ local function getClosestPlayer()
                 local sp, on = Camera:WorldToScreenPoint(part.Position)
                 if on then
                     local d = (Vector2.new(Mouse.X, Mouse.Y) - Vector2.new(sp.X, sp.Y)).Magnitude
-                    if d < shortest then shortest = d; closest = part end
+                    if d < shortest then
+                        shortest = d
+                        closest = p
+                        closestPart = part
+                    end
                 end
             end
         end
     end
-    return closest
+    return closestPart, closest
 end
 
 -- ================================================
--- AIMBOT - MOUSE MOVE (move o mouse real)
+-- BULLET DROP COMPENSATION
+-- ================================================
+local function calculateBulletDrop(targetPart)
+    if not bulletDropEnabled or not targetPart then return 0 end
+
+    local myChar = LocalPlayer.Character
+    if not myChar then return 0 end
+    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+    if not myHRP then return 0 end
+
+    -- Calcular distância 3D entre jogador e alvo
+    local distance = (myHRP.Position - targetPart.Position).Magnitude
+
+    -- Se a distância é menor que o início do drop, sem compensação
+    if distance <= bulletDropStartDist then return 0 end
+
+    -- Distância efetiva (acima do threshold)
+    local effectiveDist = distance - bulletDropStartDist
+
+    -- Fórmula de drop: quadrática para simular gravidade
+    -- quanto mais longe, mais o drop aumenta (como gravidade real)
+    -- dropPixels = intensity * (distancia_efetiva / 100)^2 * fator_base
+    local dropFactor = (effectiveDist / 100) ^ 1.5
+    local dropPixels = bulletDropIntensity * dropFactor * 30
+
+    -- Limitar o offset máximo
+    dropPixels = math.min(dropPixels, bulletDropMaxOffset)
+
+    return dropPixels
+end
+
+-- ================================================
+-- AIMBOT - COM BULLET DROP
 -- ================================================
 local function aimAtTarget(targetPart)
     if not targetPart then return end
 
+    -- Calcular bullet drop offset (em pixels na tela)
+    local dropOffset = calculateBulletDrop(targetPart)
+
     if aimbotMethod == "Camera" then
-        -- Método antigo: só move câmera (pode não funcionar em alguns jogos)
+        -- Método Camera com bullet drop compensation
+        -- Calcular posição ajustada do alvo (abaixar a mira = mirar ACIMA do alvo)
+        local adjustedPos = targetPart.Position + Vector3.new(0, dropOffset * 0.05, 0)
         Camera.CFrame = Camera.CFrame:Lerp(
-            CFrame.lookAt(Camera.CFrame.Position, targetPart.Position),
+            CFrame.lookAt(Camera.CFrame.Position, adjustedPos),
             1 / aimbotSmooth
         )
     else
-        -- Método Mouse: move o mouse real para que o jogo registre o tiro
+        -- Método Mouse com bullet drop compensation
         local screenPos, onScreen = Camera:WorldToScreenPoint(targetPart.Position)
         if not onScreen then return end
 
         local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-        local targetScreen = Vector2.new(screenPos.X, screenPos.Y)
+
+        -- Posição do alvo na tela + offset de drop (positivo = abaixar mira na tela)
+        -- Para compensar bullet drop, miramos ACIMA do alvo = offset NEGATIVO no Y da tela
+        -- Mas o problema original é "mira muito pra cima quando longe"
+        -- Então adicionamos offset POSITIVO para abaixar a mira
+        local targetScreen = Vector2.new(screenPos.X, screenPos.Y + dropOffset)
+
         local delta = targetScreen - screenCenter
 
-        -- Aplicar smoothing: quanto maior o smooth, menor o movimento por frame
         local moveX = delta.X / aimbotSmooth
         local moveY = delta.Y / aimbotSmooth
 
-        -- mousemoverel move o mouse real, fazendo o jogo registrar a mira
         if mousemoverel then
             mousemoverel(moveX, moveY)
         else
-            -- Fallback para executors que não suportam mousemoverel
+            local adjustedPos = targetPart.Position - Vector3.new(0, dropOffset * 0.05, 0)
             Camera.CFrame = Camera.CFrame:Lerp(
-                CFrame.lookAt(Camera.CFrame.Position, targetPart.Position),
+                CFrame.lookAt(Camera.CFrame.Position, adjustedPos),
                 1 / aimbotSmooth
             )
         end
@@ -484,10 +532,9 @@ UserInputService.JumpRequest:Connect(function()
 end)
 
 -- ================================================
--- MAIN LOOP (CONSOLIDADO)
+-- MAIN LOOP
 -- ================================================
 RunService.RenderStepped:Connect(function()
-    -- Aimbot
     if aimbotEnabled and aimbotActive then
         local t = getClosestPlayer()
         if t then aimAtTarget(t) end
@@ -538,7 +585,7 @@ local Window = GenarixUI:CreateWindow({
 
 GenarixUI:Notify({
     Title = "Genarix Hub",
-    Content = "Premium Hub carregado com sucesso!",
+    Content = "Premium Hub v2.4.0 carregado!",
     Duration = 4
 })
 
@@ -619,7 +666,6 @@ local aimKeybindAPI = AimSection:CreateKeybind({
     Name = "Aimbot Key (Hold)",
     Default = Enum.UserInputType.MouseButton2,
     Callback = function()
-        -- Atualiza o tipo de input quando o keybind muda
         local it = aimKeybindAPI:GetInputType()
         if it then
             aimbotInputType = it
@@ -628,7 +674,6 @@ local aimKeybindAPI = AimSection:CreateKeybind({
     end
 })
 
--- Sincronizar keybind na inicialização
 do
     local it = aimKeybindAPI:GetInputType()
     if it then
@@ -639,7 +684,47 @@ end
 
 AimSection:CreateLabel("Segure o botao/tecla para ativar o aimbot")
 AimSection:CreateLabel("Mouse Mode = tiro vai no alvo | Camera Mode = so camera")
-AimSection:CreateLabel("Funciona mesmo se o jogo usa a mesma tecla!")
+
+-- ================================================
+-- BULLET DROP SECTION
+-- ================================================
+local DropSection = AimbotTab:CreateSection("Bullet Drop Compensation")
+
+local bulletDropToggle = DropSection:CreateToggle({
+    Name = "Enable Bullet Drop",
+    Default = true,
+    Callback = function(v)
+        bulletDropEnabled = v
+        GenarixUI:Notify({
+            Title = "Bullet Drop",
+            Content = v and "Compensacao de queda ativada!" or "Compensacao desativada!",
+            Duration = 2
+        })
+    end
+})
+allToggleAPIs.bulletDrop = bulletDropToggle
+
+DropSection:CreateSlider({
+    Name = "Drop Intensity",
+    Min = 0.1, Max = 5.0, Default = 1.0, Increment = 0.1,
+    Callback = function(v) bulletDropIntensity = v end
+})
+
+DropSection:CreateSlider({
+    Name = "Start Distance (studs)",
+    Min = 10, Max = 200, Default = 50, Increment = 5,
+    Callback = function(v) bulletDropStartDist = v end
+})
+
+DropSection:CreateSlider({
+    Name = "Max Drop Offset (px)",
+    Min = 50, Max = 500, Default = 200, Increment = 10,
+    Callback = function(v) bulletDropMaxOffset = v end
+})
+
+DropSection:CreateLabel("Intensity: quanto a mira abaixa por distancia")
+DropSection:CreateLabel("Start Dist: distancia minima para comecar o drop")
+DropSection:CreateLabel("Ajuste a intensidade conforme o jogo!")
 
 -- ================================================
 -- HITBOX TAB
@@ -914,7 +999,6 @@ KeySection:CreateKeybind({
     Name = "Panic Key (Desliga Tudo)",
     Default = Enum.KeyCode.P,
     Callback = function()
-        -- Desativar todas as variáveis
         aimbotEnabled = false
         hitboxEnabled = false
         espEnabled = false
@@ -925,14 +1009,13 @@ KeySection:CreateKeybind({
         fullbrightEnabled = false
         removeFogEnabled = false
         removeParticlesEnabled = false
+        bulletDropEnabled = false
         aimbotActive = false
 
-        -- Desativar TODOS os toggles visualmente
         for name, api in pairs(allToggleAPIs) do
             pcall(function() api:Set(false) end)
         end
 
-        -- Cleanup de sistemas
         resetHitboxes()
         removeAllESP()
         removeFOVCircle()
@@ -941,7 +1024,6 @@ KeySection:CreateKeybind({
         toggleFog(false)
         toggleParticles(false)
 
-        -- Resetar character
         local c = LocalPlayer.Character
         if c then
             local h = c:FindFirstChildOfClass("Humanoid")
@@ -960,7 +1042,7 @@ KeySection:CreateKeybind({
 })
 
 local InfoSection = SettingsTab:CreateSection("Info")
-InfoSection:CreateLabel("Genarix Hub Premium v2.3.0")
+InfoSection:CreateLabel("Genarix Hub Premium v2.4.0")
 InfoSection:CreateLabel("Powered by Genarix UI Library")
 InfoSection:CreateLabel("100% Free & Universal")
 
@@ -994,8 +1076,8 @@ InfoSection:CreateButton({
 })
 
 print("=============================================")
-print("  Genarix Hub Premium v2.3.0")
+print("  Genarix Hub Premium v2.4.0")
 print("  GUI Toggle: RightShift")
 print("  Panic Key: P | Aimbot: Mouse2")
-print("  Aim Method: Mouse (mousemoverel)")
+print("  Aim Method: Mouse + Bullet Drop")
 print("=============================================")
