@@ -1,7 +1,7 @@
 --[[
     ╔══════════════════════════════════════════════════╗
     ║         GENARIX HUB PREMIUM - UNIVERSAL         ║
-    ║         Version: 2.4.1                          ║
+    ║         Version: 2.4.2                          ║
     ║         Powered by Genarix UI Library           ║
     ╚══════════════════════════════════════════════════╝
 ]]
@@ -153,7 +153,7 @@ local function calculateBulletDrop(targetPart)
 
     local effectiveDist = distance - bulletDropStartDist
 
-    -- Fórmula suave: expoente 1.3 e fator base 15 (~50% menos que antes)
+    -- Fórmula suave: expoente 1.3 e fator base 15
     local dropFactor = (effectiveDist / 100) ^ 1.3
     local dropPixels = bulletDropIntensity * dropFactor * 15
 
@@ -570,7 +570,7 @@ local Window = GenarixUI:CreateWindow({
 
 GenarixUI:Notify({
     Title = "Genarix Hub",
-    Content = "Premium Hub v2.4.1 carregado!",
+    Content = "Premium Hub v2.4.2 carregado!",
     Duration = 4
 })
 
@@ -732,7 +732,6 @@ local hitboxToggle = HitSection:CreateToggle({
 })
 allToggleAPIs.hitbox = hitboxToggle
 
--- Max aumentado de 15 para 25
 HitSection:CreateSlider({
     Name = "Hitbox Size",
     Min = 1, Max = 25, Default = 5, Increment = 1,
@@ -834,9 +833,10 @@ local speedToggle = MoveSection:CreateToggle({
 })
 allToggleAPIs.speed = speedToggle
 
+-- Walk Speed máximo aumentado para 1000
 MoveSection:CreateSlider({
     Name = "Walk Speed",
-    Min = 16, Max = 200, Default = 16, Increment = 1,
+    Min = 16, Max = 1000, Default = 16, Increment = 1,
     Callback = function(v) customSpeed = v end
 })
 
@@ -985,7 +985,6 @@ KeySection:CreateKeybind({
     Name = "Panic Key (Desliga Tudo)",
     Default = Enum.KeyCode.P,
     Callback = function()
-        -- Zerar todas as variáveis
         aimbotEnabled = false
         hitboxEnabled = false
         espEnabled = false
@@ -999,12 +998,10 @@ KeySection:CreateKeybind({
         bulletDropEnabled = false
         aimbotActive = false
 
-        -- Desativar TODOS os toggles visualmente
         for _, api in pairs(allToggleAPIs) do
             pcall(function() api:Set(false) end)
         end
 
-        -- Cleanup de sistemas
         resetHitboxes()
         removeAllESP()
         removeFOVCircle()
@@ -1013,7 +1010,6 @@ KeySection:CreateKeybind({
         toggleFog(false)
         toggleParticles(false)
 
-        -- Resetar stats do personagem
         local c = LocalPlayer.Character
         if c then
             local h = c:FindFirstChildOfClass("Humanoid")
@@ -1032,7 +1028,7 @@ KeySection:CreateKeybind({
 })
 
 local InfoSection = SettingsTab:CreateSection("Info")
-InfoSection:CreateLabel("Genarix Hub Premium v2.4.1")
+InfoSection:CreateLabel("Genarix Hub Premium v2.4.2")
 InfoSection:CreateLabel("Powered by Genarix UI Library")
 InfoSection:CreateLabel("100% Free & Universal")
 
@@ -1066,9 +1062,9 @@ InfoSection:CreateButton({
 })
 
 print("=============================================")
-print("  Genarix Hub Premium v2.4.1")
+print("  Genarix Hub Premium v2.4.2")
 print("  GUI Toggle: RightShift")
 print("  Panic Key: P | Aimbot: Mouse2")
-print("  Bullet Drop: Suave (x1.3 / base 15)")
+print("  Walk Speed Max: 1000")
 print("  Hitbox Max: 25")
 print("=============================================")
